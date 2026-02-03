@@ -13,8 +13,12 @@ def main():
     info = parse(diff)
     message = generate_message(info, diff)
 
-    print("Suggested commit:")
-    print(message)
+    print("\n" + "="*60)
+    print("SUGGESTED COMMIT:")
+    print("="*60)
+    print(f"Subject: {message['subject']}")
+    print(f"\nDescription:\n{message['body']}")
+    print("="*60)
     print()
 
     choice = input("Proceed? [Y/n] ").strip().lower()
@@ -23,7 +27,9 @@ def main():
         print("Cancelled.")
         return
 
-    subprocess.call(["git", "commit", "-m", message])
+    subprocess.call(["git", "commit", "-m", message['subject'], "-m", message['body']])
+    print("\n Commit created successfully!")
+
 
 if __name__ == "__main__":
     main()
