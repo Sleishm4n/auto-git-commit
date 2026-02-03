@@ -1,25 +1,42 @@
 import subprocess
+from diff import get_diff, get_files
 
 def phi_generate(diff):
-    prompt = f"""
-Generate a consice git commit message (max 12 words) describing these changes:
-{diff}
-"""
+    files = get_files()
+    diff = get_diff()
+
+    prompt = f"""Generate a git commit message for these changes.
+
+Files: {files}
+
+Changes:
+{diff[:600]}
+
+Reply with ONLY the commit message (max 10 words, imperative mood).
+Message:"""
     try:
         proc = subprocess.Popen(
-            [r"C:/Users/samgl/AppData/Local/Programs/Ollama/ollama.exe", "run", "phi"],
+            ["ollama", "run", "llama3.2:1b"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            encoding="utf-8",
+            errors="ignore"
         )
 
         out, _ = proc.communicate(prompt, timeout=60)
 
         if out:
-            return out.strip().split("\n")[0]
+            lines = [line.strip() for line in out.strip().split("\n") if line.strip()]
+            for line in lines:
+                if len(line) > 5 and not line.startswith("To help") and not line.startswith("I "):
+                    return line.strip('"').strip("'")
+            if lines:
+                return lines[0].strip('"').strip("'")
 
-    except Exception:
+    except Exception as e:
+        print(f"LLM error: {e}")
         return None
 
 def heuristic_generate(info):

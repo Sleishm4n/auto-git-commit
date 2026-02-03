@@ -1,15 +1,12 @@
-from diff import get_diff
+from diff import get_diff, has_changes
 from parser import parse
 from generator import generate_message
 import subprocess
-import sys
 
-def run():
+def main():
     diff = get_diff()
 
-    diff = diff[:3000]
-
-    if not diff.strip():
+    if not has_changes():
         print("No changes detected.")
         return
 
@@ -29,4 +26,4 @@ def run():
     subprocess.call(["git", "commit", "-m", message])
 
 if __name__ == "__main__":
-    run()
+    main()
