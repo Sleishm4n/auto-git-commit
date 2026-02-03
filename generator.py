@@ -1,28 +1,29 @@
 import subprocess
 from diff import get_diff, get_files
 
-def phi_generate(diff):
+def llm_generate_full(diff):
+    """Generate both commit message and description using LLM"""
     files = get_files()
-    diff = get_diff()
+    diff_content = get_diff()
 
-    prompt = f"""Generate a git commit message and description for these changes.
+    prompt = f"""You are analyzing a git diff. Generate a commit message based ONLY on what you see in the changes below.
 
-Files: {files}
+Files changed:
+{files}
 
-Changes:
-{diff[:800]}
+Actual code changes:
+{diff_content[:8000]}
 
-Format your response EXACTLY like this:
-SUBJECT: <one line commit message, max 50 chars, imperative mood>
-BODY: <2-3 sentences explaining what changed and why>
+Create a commit message in this EXACT format:
+SUBJECT: [one line, max 50 chars, start with: Add/Fix/Update/Refactor/Remove]
+BODY: [2-3 sentences describing ONLY what changed in the code above]
 
-Example:
-SUBJECT: Add user authentication system
-BODY: Implements JWT-based authentication with login and registration endpoints. Includes password hashing using bcrypt and token refresh functionality. This provides secure user access control for the application.
+DO NOT invent features not shown in the diff. Only describe what you actually see.
 """
+    
     try:
         proc = subprocess.Popen(
-            ["ollama", "run", "llama3.2:1b"],
+            ["ollama", "run", "qwen2.5:3b"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -30,37 +31,41 @@ BODY: Implements JWT-based authentication with login and registration endpoints.
             encoding="utf-8",
             errors="ignore"
         )
-
-        out, _ = proc.communicate(prompt, timeout=60)
-
+        
+        out, _ = proc.communicate(prompt, timeout=45)
+        
         if out:
-            subject, body = None, None
-
+            # Parse the output
+            subject = None
+            body = None
+            
             lines = out.strip().split("\n")
             for i, line in enumerate(lines):
                 line = line.strip()
                 if line.startswith("SUBJECT:"):
-                    subject = line.replace("SUBJECT:", "").strip().strip()
+                    subject = line.replace("SUBJECT:", "").strip().strip('"').strip("'")
                 elif line.startswith("BODY:"):
+                    # Get the body (might be multiple lines)
                     body_lines = [line.replace("BODY:", "").strip()]
+                    # Check if body continues on next lines
                     for next_line in lines[i+1:]:
-                        if next_line.strip() and not next_line.startswith("SUBJECT"):
-                            body_lines.append(next_line.strip())
+                        next_line = next_line.strip()
+                        if next_line and not next_line.startswith("SUBJECT") and not next_line.startswith("Example"):
+                            body_lines.append(next_line)
                         else:
                             break
                     body = " ".join(body_lines).strip('"').strip("'")
             
-            if subject and body:
+            # Validate subject and body
+            if subject and body and len(body) > 10:
                 return {"subject": subject, "body": body}
-            elif subject:
-                return {"subject": subject, "body": f"Updates {files.split()[0] if files else 'project files'}."}
-
 
     except Exception as e:
         print(f"LLM error: {e}")
         return None
 
-def heuristic_generate(info):
+def heuristic_generate_full(info):
+    """Generate commit message and description using heuristics"""
     files = info["files"]
     added = info["added"]
     removed = info["removed"]
@@ -69,31 +74,50 @@ def heuristic_generate(info):
     if not files:
         return {
             "subject": "Update project files",
-            "body": "General updates and improvements to project files."
+            "body": "Makes general updates and improvements to project files."
         }
 
-    target = files[0].split("/")[-1].split(".")[0]
-
-    if "test" in keywords:
-        prefix = "Add tests for"
+    # Get primary file
+    target = files[0].split("/")[-1].split(".")[0] if files else "files"
+    file_count = len(files)
+    ext = files[0].split(".")[-1] if "." in files[0] else "file"
+    
+    # Determine action and description
+    if "test" in keywords or any("test" in f for f in files):
+        subject = f"Add tests for {target}"
+        body = f"Adds {added} lines of test coverage for {target}. Includes test cases for core functionality."
+    
     elif "fix" in keywords or "bug" in keywords:
-        prefix = "Fix"
-    elif added > removed:
-        prefix = "Implement"
+        subject = f"Fix {target}"
+        body = f"Resolves issues in {target}. Modified {added + removed} lines to address bugs and improve stability."
+    
+    elif removed > added * 2:
+        subject = f"Refactor {target}"
+        body = f"Refactors {target} to improve code quality. Removed {removed} lines of redundant code and simplified implementation."
+    
+    elif added > removed * 3:
+        subject = f"Implement {target}"
+        body = f"Adds new {target} functionality with {added} lines of code. Extends project capabilities with new features."
+    
+    elif file_count > 3:
+        subject = f"Update {file_count} {ext} files"
+        body = f"Updates {file_count} files with {added} additions and {removed} deletions. Improves overall codebase quality."
+    
     else:
-        prefix = "Refactor"
-
-    return f"{prefix} {target}"
+        subject = f"Update {target}"
+        body = f"Updates {target} with {added} line additions and {removed} deletions. Modifies core functionality and improves implementation."
+    
+    return {"subject": subject, "body": body}
 
 def generate_message(info, diff):
-    msg = phi_generate(diff)
-
-    if msg:
+    """Generate full commit message with subject and body"""
+    result = llm_generate_full(diff)
+    
+    if result and result.get('body'):
         print("LLM RAW:")
-        print(f"  Subject: {msg['subject']}")
-        print(f"  Body: {msg['body']}")
+        print(f"  Subject: {result['subject']}")
+        print(f"  Body: {result['body']}")
+        return result
     else:
         print("LLM failed, using heuristics")
-        msg = heuristic_generate(info)
-    
-    return msg
+        return heuristic_generate_full(info)

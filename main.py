@@ -13,11 +13,18 @@ def main():
     info = parse(diff)
     message = generate_message(info, diff)
 
+    if isinstance(message, dict):
+        subject = message['subject']
+        body = message.get('body', '')
+    else:
+        subject = message
+        body = ''
+
     print("\n" + "="*60)
     print("SUGGESTED COMMIT:")
     print("="*60)
-    print(f"Subject: {message['subject']}")
-    print(f"\nDescription:\n{message['body']}")
+    print(f"Subject: {subject}")
+    print(f"\nDescription:\n{body}")
     print("="*60)
     print()
 
@@ -27,7 +34,10 @@ def main():
         print("Cancelled.")
         return
 
-    subprocess.call(["git", "commit", "-m", message['subject'], "-m", message['body']])
+    if body:
+        subprocess.call(["git", "commit", "-m", subject, "-m", body])
+    else:
+        subprocess.call(["git", "commit", "-m", subject])
     print("\n Commit created successfully!")
 
 

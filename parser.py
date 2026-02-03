@@ -1,10 +1,16 @@
 import re
-from collections import Counter
+from diff import get_files
 
 KEYWORDS = ["fix", "bug", "error", "test", "refactor", "cleanup"]
 
 def parse(diff):
-    files = re.findall(r"diff --git a/(.*?) b/", diff)
+    files_str = get_files()
+    files = files_str.split('\n') if files_str else []
+    files = [f.strip() for f in files if f.strip()]
+    
+    diff_files = re.findall(r"diff --git a/(.*?) b/", diff)
+    if diff_files and not files:
+        files = diff_files
 
     added, removed = 0, 0
 
